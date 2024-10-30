@@ -1,0 +1,94 @@
+# GitHub Actions workflow for building and pushing the backend application
+# Version: 1.0.0
+# Required secrets:
+# - AWS_ACCESS_KEY_ID: AWS access key for ECR access
+# - AWS_SECRET_ACCESS_KEY: AWS secret key for ECR access
+
+name: Build and Push
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  workflow_dispatch:  # Allows manual triggering
+
+env:
+  # Global environment variables as specified in JSON spec
+  AWS_REGION: us-west-2
+  NODE_VERSION: '14'
+  ECR_REPOSITORY: my-ecr-repo
+
+jobs:
+  build:
+    name: Build and Push
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out repository code
+      # actions/checkout@v2 - Official GitHub Action to check out repository code
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      # Step 2: Set up Node.js environment
+      # actions/setup-node@v2 - Official GitHub Action to set up Node.js
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'  # Enables npm dependency caching
+
+      # Step 3: Install project dependencies
+      - name: Install dependencies
+        run: |
+          npm ci  # Uses package-lock.json for deterministic installs
+          npm audit  # Security audit of dependencies
+
+      # Step 4: Build the application
+      - name: Build application
+        run: |
+          npm run build
+          npm run lint  # Run linting checks as part of build process
+
+      # Step 5: Configure AWS credentials
+      # aws-actions/configure-aws-credentials@v1 - Official AWS GitHub Action
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Step 6: Login to Amazon ECR
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      # Step 7: Build and push Docker image
+      # docker/build-push-action@v2 - Official Docker GitHub Action
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v2
+        with:
+          context: .
+          file: infrastructure/docker/Dockerfile
+          push: true
+          tags: |
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:latest
+            ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+          build-args: |
+            NODE_VERSION=${{ env.NODE_VERSION }}
+            BUILD_DATE=${{ github.event.repository.updated_at }}
+            COMMIT_SHA=${{ github.sha }}
+
+      # Step 8: Run the build-push-ecr script for additional ECR management
+      - name: Execute ECR management script
+        run: |
+          chmod +x infrastructure/aws/scripts/build-push-ecr.sh
+          DOCKER_IMAGE_TAG=${{ github.sha }} ./infrastructure/aws/scripts/build-push-ecr.sh
+
+      # Step 9: Clean up
+      - name: Clean up
+        if: always()  # Run even if previous steps fail
+        run: |
+          docker system prune -f
+          npm cache clean --force
