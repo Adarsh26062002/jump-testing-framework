@@ -20,7 +20,6 @@ import { logMessage } from './logger';
 // Initialize AJV instance with strict mode and all errors
 const ajv = new Ajv({
     allErrors: true,
-    strict: true,
     removeAdditional: false,
     useDefaults: true,
     coerceTypes: false

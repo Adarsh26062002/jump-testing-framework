@@ -13,7 +13,7 @@
  */
 
 // API Types - GraphQL and REST client configurations
-export type {
+import type {
   GraphQLClientConfig,
   GraphQLResponse,
   RESTClientConfig,
@@ -21,13 +21,13 @@ export type {
 } from './api.types';
 
 // Data Schema and Validation Types
-export type {
+import type {
   DataSchema,
   DataTransformation,
 } from './data.types';
 
 // Database Model Types
-export type {
+import type {
   DatabaseModel,
   DataSetModel,
   TestCaseModel,
@@ -37,7 +37,7 @@ export type {
 } from './db.types';
 
 // Test Structure Types
-export type {
+import type {
   TestCase,
   TestStep,
   TestData,
