@@ -14,8 +14,8 @@ import Ajv from 'ajv';
 
 // Internal dependencies
 import { DataSchema } from '../types/data.types';
-import { createError } from './utils/errors';
-import { logMessage } from './utils/logger';
+import { createError } from './errors';
+import { logMessage } from './logger';
 
 // Initialize AJV instance with strict mode and all errors
 const ajv = new Ajv({

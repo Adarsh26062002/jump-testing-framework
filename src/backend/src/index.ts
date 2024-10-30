@@ -59,6 +59,13 @@ export const startServer = async (): Promise<void> => {
             headers: {
                 'X-API-Version': '1.0',
                 'X-Client-ID': process.env.API_CLIENT_ID || 'test-framework'
+            },
+            retryConfig: {
+                attempts: 3,    
+                backoff: 1000, 
+            },
+            validateStatus: (status) => {
+                return status >= 200 && status < 300;
             }
         });
         logMessage('info', 'REST client configured successfully');
