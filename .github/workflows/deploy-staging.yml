@@ -1,0 +1,123 @@
+# GitHub Actions workflow for deploying to staging environment
+# Version: 1.0.0
+# Dependencies:
+# - aws-actions/configure-aws-credentials@v1
+# - docker/build-push-action@v2
+# - actions/checkout@v2
+
+name: Deploy to Staging
+
+# Trigger deployment on push to main branch
+on:
+  push:
+    branches:
+      - main
+  # Allow manual trigger
+  workflow_dispatch:
+
+# Environment variables from specification
+env:
+  AWS_REGION: us-west-2
+  ECR_REPOSITORY: my-ecr-repo
+  IMAGE_TAG: ${{ github.sha }}
+  ENVIRONMENT: staging
+
+# Permissions required for AWS operations
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to Staging
+    runs-on: ubuntu-latest
+    environment: staging
+    
+    steps:
+      # Implements requirement from system_architecture.deployment_architecture
+      # Checkout repository for access to configuration and deployment scripts
+      - name: Checkout Repository
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # Fetch all history for proper versioning
+      
+      # Implements requirement from security_architecture for AWS authentication
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      
+      # Implements requirement from infrastructure.ci/cd_pipeline for container builds
+      - name: Login to Amazon ECR
+        id: login-ecr
+        run: |
+          aws ecr get-login-password --region ${{ env.AWS_REGION }} | docker login --username AWS --password-stdin ${{ secrets.AWS_ACCOUNT_ID }}.dkr.ecr.${{ env.AWS_REGION }}.amazonaws.com
+      
+      # Build and push Docker image using the build-push-ecr.sh script
+      - name: Build and Push Docker Image
+        env:
+          DOCKER_IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          chmod +x ./infrastructure/aws/scripts/build-push-ecr.sh
+          ./infrastructure/aws/scripts/build-push-ecr.sh
+      
+      # Deploy infrastructure using AWS CDK through deploy.sh script
+      - name: Deploy Infrastructure
+        env:
+          STACK_NAME: test-framework-staging
+          DOCKER_IMAGE_TAG: ${{ env.IMAGE_TAG }}
+        run: |
+          # Install AWS CDK CLI
+          npm install -g aws-cdk@2.0.0
+          
+          # Install dependencies for CDK app
+          cd infrastructure/aws/cdk
+          npm install
+          
+          # Execute deployment script
+          chmod +x ../scripts/deploy.sh
+          ../scripts/deploy.sh
+      
+      # Verify deployment health
+      - name: Verify Deployment
+        run: |
+          chmod +x ./infrastructure/aws/scripts/health-check.sh
+          ./infrastructure/aws/scripts/health-check.sh
+      
+      # Notify on deployment status
+      - name: Notify Deployment Status
+        if: always()
+        uses: 8398a7/action-slack@v3
+        with:
+          status: ${{ job.status }}
+          fields: repo,message,commit,author,action,eventName,ref,workflow,job,took
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+
+      # Implement monitoring stack for deployment tracking
+      - name: Update Monitoring Dashboard
+        if: success()
+        run: |
+          aws cloudwatch put-metric-data \
+            --namespace "TestFramework/Deployments" \
+            --metric-name "StagingDeployment" \
+            --value 1 \
+            --timestamp $(date +%s)
+
+  # Cleanup job to handle post-deployment tasks
+  cleanup:
+    needs: deploy
+    runs-on: ubuntu-latest
+    if: always()
+    steps:
+      - name: Cleanup Old Images
+        if: needs.deploy.result == 'success'
+        run: |
+          aws ecr list-images \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --query 'imageIds[?type(imageTag)!=`string`].[imageDigest]' \
+            --output text | \
+          xargs -I {} aws ecr batch-delete-image \
+            --repository-name ${{ env.ECR_REPOSITORY }} \
+            --image-ids imageDigest={}
