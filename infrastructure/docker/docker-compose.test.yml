@@ -1,0 +1,70 @@
+# Docker Compose configuration for test environment
+# Version: 3.8 for advanced features and compatibility
+version: '3.8'
+
+services:
+  # Main application service for running tests
+  app:
+    build:
+      # Context is set to the backend directory containing the source code
+      context: ../../src/backend
+      # Using specific Dockerfile for test environment
+      dockerfile: Dockerfile.test
+    environment:
+      # Test environment configuration
+      NODE_ENV: test
+      APP_PORT: '3000'
+      # Database connection configuration for test environment
+      DB_HOST: test_database
+      DB_PORT: '5432'
+      DB_USER: test_user
+      DB_PASSWORD: test_password
+      DB_NAME: test_db
+    ports:
+      # Expose application port for test access
+      - "3000:3000"
+    depends_on:
+      # Ensure database is available before starting the application
+      - test_database
+    volumes:
+      # Mount source code for hot reloading during development
+      - ../../src/backend:/app
+      # Anonymous volume for node_modules to prevent overwriting
+      - /app/node_modules
+    command: npm run test
+    networks:
+      - test_network
+
+  # PostgreSQL database service for testing
+  test_database:
+    # Using PostgreSQL 13 as specified in external dependencies
+    image: postgres:13
+    environment:
+      # Database configuration for test environment
+      POSTGRES_USER: test_user
+      POSTGRES_PASSWORD: test_password
+      POSTGRES_DB: test_db
+    ports:
+      # Map to different port to avoid conflicts with development database
+      - "5433:5432"
+    volumes:
+      # Persistent volume for database data
+      - test_db_data:/var/lib/postgresql/data
+    healthcheck:
+      # Ensure database is ready to accept connections
+      test: ["CMD-SHELL", "pg_isready -U test_user -d test_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - test_network
+
+# Volume definitions for persistent data
+volumes:
+  test_db_data:
+    driver: local
+
+# Network configuration for test environment
+networks:
+  test_network:
+    driver: bridge
