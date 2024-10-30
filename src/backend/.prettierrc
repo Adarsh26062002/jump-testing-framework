@@ -1,0 +1,25 @@
+{
+  // Maximum line length before wrapping
+  "printWidth": 80,
+  
+  // Number of spaces per indentation level
+  "tabWidth": 2,
+  
+  // Use spaces instead of tabs
+  "useTabs": false,
+  
+  // Add semicolons at the end of statements
+  "semi": true,
+  
+  // Use single quotes instead of double quotes
+  "singleQuote": true,
+  
+  // Add trailing commas in objects and arrays (ES5 compatible)
+  "trailingComma": "es5",
+  
+  // Add spaces between brackets in object literals
+  "bracketSpacing": true,
+  
+  // Avoid parentheses around single arrow function parameters
+  "arrowParens": "avoid"
+}
