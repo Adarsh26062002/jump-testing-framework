@@ -1,0 +1,71 @@
+# Use official Node.js 18 Alpine image as base
+# Version: 18-alpine
+FROM node:18-alpine
+
+# Set environment variables for test environment
+ENV NODE_ENV=test
+
+# Set working directory
+WORKDIR /app
+
+# Install build and test dependencies
+RUN apk add --no-cache \
+    # Required for node-gyp, native module compilation, and testing tools
+    python3 \
+    make \
+    g++ \
+    # Required for running Chromium-based tests if needed
+    chromium \
+    chromium-chromedriver \
+    # Clean up cache to reduce image size
+    && rm -rf /var/cache/apk/*
+
+# Copy package files for dependency installation
+# Only copy what's needed for npm install to leverage Docker layer caching
+COPY src/backend/package.json ./
+COPY src/backend/tsconfig.json ./
+COPY src/backend/jest.config.js ./
+
+# Install all dependencies including devDependencies for testing
+# Using ci for deterministic installs
+RUN npm ci \
+    # Clean npm cache to reduce image size
+    && npm cache clean --force
+
+# Copy application source code
+# Note: .dockerignore should exclude node_modules, dist, and other non-source files
+COPY src/backend/src ./src
+COPY src/backend/test ./test
+
+# Build TypeScript application and prepare test environment
+RUN npm run build \
+    # Create directory for test results
+    && mkdir -p /app/test-results \
+    # Create directory for test coverage reports
+    && mkdir -p /app/coverage
+
+# Expose the test application port
+# Note: The actual port binding happens at runtime via docker run -p or docker-compose
+EXPOSE 3000
+
+# Set user to non-root for security
+# Create a non-root user and group
+RUN addgroup -S testgroup && adduser -S testuser -G testgroup
+# Set permissions for test directories
+RUN chown -R testuser:testgroup /app/test-results /app/coverage
+USER testuser
+
+# Health check to verify test environment status
+HEALTHCHECK --interval=30s --timeout=3s --start-period=30s --retries=3 \
+    CMD wget --no-verbose --tries=1 --spider http://localhost:3000/health || exit 1
+
+# Default command to run tests
+# Can be overridden via docker-compose or docker run command
+CMD ["npm", "test"]
+
+# Build-time metadata
+LABEL maintainer="Test Framework Team" \
+    version="1.0.0" \
+    description="Test Framework Test Environment" \
+    org.opencontainers.image.source="https://github.com/organization/test-framework" \
+    environment="test"
