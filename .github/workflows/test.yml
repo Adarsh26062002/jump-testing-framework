@@ -1,0 +1,95 @@
+# GitHub Actions workflow for running tests
+# Version: 1.0.0
+# Implements requirements from infrastructure.ci/cd_pipeline section
+# Uses Jest configuration from jest.config.js and test scripts from package.json
+
+name: Test
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  # Enable manual trigger
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    
+    # Define environment variables
+    env:
+      NODE_ENV: test
+      CI: true
+
+    steps:
+      # Check out repository code
+      # actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # Fetch all history for proper test coverage reporting
+
+      # Set up Node.js environment
+      # actions/setup-node@v2
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: '14'  # Matches engine requirement in package.json
+          cache: 'npm'  # Enable npm cache
+
+      # Install dependencies
+      - name: Install dependencies
+        working-directory: src/backend
+        run: |
+          npm ci  # Clean install for CI environments
+          npm audit  # Security audit
+
+      # Run linting
+      - name: Run linting
+        working-directory: src/backend
+        run: npm run lint
+
+      # Type checking
+      - name: Run type checking
+        working-directory: src/backend
+        run: npm run typecheck
+
+      # Run tests with coverage
+      - name: Run tests
+        working-directory: src/backend
+        run: npm run test:ci
+        env:
+          JEST_JUNIT_OUTPUT_DIR: ./test-results
+          JEST_JUNIT_OUTPUT_NAME: junit.xml
+          JEST_JUNIT_CLASSNAME: "{classname}"
+          JEST_JUNIT_TITLE: "{title}"
+
+      # Upload test results
+      - name: Upload test results
+        if: always()  # Run even if tests fail
+        uses: actions/upload-artifact@v2
+        with:
+          name: test-results
+          path: src/backend/test-results
+
+      # Upload coverage reports
+      - name: Upload coverage reports
+        if: always()
+        uses: actions/upload-artifact@v2
+        with:
+          name: coverage-report
+          path: src/backend/coverage
+
+      # Cache dependencies
+      - name: Cache node modules
+        uses: actions/cache@v2
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+
+    # Job timeout
+    timeout-minutes: 15
