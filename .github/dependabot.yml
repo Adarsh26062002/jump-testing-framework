@@ -1,0 +1,85 @@
+# Dependabot configuration file v2
+# Docs: https://docs.github.com/en/code-security/dependabot/dependabot-version-updates/configuration-options-for-the-dependabot.yml-file
+
+version: 2
+updates:
+  # Backend npm dependencies
+  - package-ecosystem: "npm"
+    directory: "/src/backend"
+    schedule:
+      interval: "daily"
+    # Set reviewers for backend dependency PRs
+    reviewers:
+      - "backend-team"
+    # Group all dev dependencies into a single PR
+    groups:
+      dev-dependencies:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - "express"
+          - "typescript"
+          - "pg"
+    # Security updates should be prioritized
+    labels:
+      - "dependencies"
+      - "security"
+    # Limit number of open PRs to avoid overwhelming
+    open-pull-requests-limit: 10
+    # Ignore major version updates for stability
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # Infrastructure npm dependencies (AWS CDK)
+  - package-ecosystem: "npm"
+    directory: "/infrastructure/aws/cdk"
+    schedule:
+      interval: "daily"
+    reviewers:
+      - "infrastructure-team"
+    labels:
+      - "dependencies"
+      - "infrastructure"
+    open-pull-requests-limit: 5
+
+  # Docker dependencies
+  - package-ecosystem: "docker"
+    directory: "/infrastructure/docker"
+    schedule:
+      interval: "daily"
+    reviewers:
+      - "infrastructure-team"
+    labels:
+      - "dependencies"
+      - "docker"
+    open-pull-requests-limit: 5
+
+  # GitHub Actions dependencies
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "daily"
+    reviewers:
+      - "devops-team"
+    labels:
+      - "dependencies"
+      - "ci-cd"
+    open-pull-requests-limit: 5
+
+  # Terraform dependencies
+  - package-ecosystem: "terraform"
+    directory: "/infrastructure/terraform"
+    schedule:
+      interval: "daily"
+    reviewers:
+      - "infrastructure-team"
+    labels:
+      - "dependencies"
+      - "terraform"
+    open-pull-requests-limit: 5
+
+# Commit message configuration
+commit-message:
+  prefix: "chore"
+  include: "scope"
