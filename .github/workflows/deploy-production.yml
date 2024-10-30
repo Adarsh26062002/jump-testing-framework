@@ -1,0 +1,123 @@
+# GitHub Actions workflow for deploying the production environment
+# Version: 1.0.0
+# This workflow handles the deployment of infrastructure components to AWS production environment
+# using AWS CDK and associated deployment scripts.
+
+name: Deploy Production
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  AWS_REGION: us-west-2  # From globals specification
+  ECR_REPOSITORY: my-ecr-repo  # From globals specification
+  IMAGE_TAG: latest  # From globals specification
+  NODE_VERSION: '14'  # From job specification
+  CDK_VERSION: '2.0.0'  # From infrastructure requirements
+
+# Ensure we don't have multiple deployments running simultaneously
+concurrency: 
+  group: production_environment
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    environment: production  # Use production environment for secrets
+    
+    permissions:
+      id-token: write  # Required for AWS credential configuration
+      contents: read   # Required for checkout
+
+    steps:
+      # Step 1: Checkout repository
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # Full history for versioning
+
+      # Step 2: Setup Node.js environment
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      # Step 3: Configure AWS credentials
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+          mask-aws-account-id: true
+
+      # Step 4: Login to Amazon ECR
+      - name: Log in to Amazon ECR
+        uses: aws-actions/amazon-ecr-login@v1
+        with:
+          registries: ${{ secrets.AWS_ACCOUNT_ID }}
+
+      # Step 5: Install dependencies
+      - name: Install dependencies
+        run: |
+          npm ci
+          npm install -g aws-cdk@${{ env.CDK_VERSION }}
+        working-directory: infrastructure/aws/cdk
+
+      # Step 6: Build and push Docker image
+      - name: Build and push Docker image
+        run: |
+          chmod +x infrastructure/aws/scripts/build-push-ecr.sh
+          infrastructure/aws/scripts/build-push-ecr.sh
+        env:
+          DOCKER_IMAGE_TAG: ${{ github.sha }}
+          AWS_ACCOUNT_ID: ${{ secrets.AWS_ACCOUNT_ID }}
+
+      # Step 7: Deploy AWS infrastructure
+      - name: Deploy AWS infrastructure
+        run: |
+          chmod +x infrastructure/aws/scripts/deploy.sh
+          infrastructure/aws/scripts/deploy.sh
+        env:
+          STACK_NAME: test-framework-production
+          DOCKER_IMAGE_TAG: ${{ github.sha }}
+          CDK_DEPLOY_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          CDK_DEPLOY_REGION: ${{ env.AWS_REGION }}
+
+      # Step 8: Perform health checks
+      - name: Perform health checks
+        run: |
+          chmod +x infrastructure/aws/scripts/health-check.sh
+          infrastructure/aws/scripts/health-check.sh
+        env:
+          ALERT_SNS_TOPIC: ${{ secrets.ALERT_SNS_TOPIC_ARN }}
+
+      # Step 9: Create deployment tag
+      - name: Tag deployment
+        if: success()
+        run: |
+          git tag production-${{ github.sha }}
+          git push origin production-${{ github.sha }}
+
+      # Step 10: Notify on failure
+      - name: Notify on failure
+        if: failure()
+        uses: aws-actions/aws-sns-publish@v1
+        with:
+          topic-arn: ${{ secrets.ALERT_SNS_TOPIC_ARN }}
+          message: |
+            Production deployment failed!
+            Repository: ${{ github.repository }}
+            Workflow: ${{ github.workflow }}
+            Commit: ${{ github.sha }}
+            See: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          subject: "Production Deployment Failure"
+
+    outputs:
+      deployment_id: ${{ github.sha }}
+      image_tag: ${{ github.sha }}
