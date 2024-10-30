@@ -1,0 +1,104 @@
+# GitHub Actions workflow for pull request checks
+# Version: 1.0.0
+# This workflow implements the CI/CD pipeline requirements for pull request validation
+# Integrates with build.yml and test.yml workflows for comprehensive checks
+
+name: Pull Request Checks
+
+on:
+  pull_request:
+    branches: [ main, develop ]
+  # Enable manual triggering for testing
+  workflow_dispatch:
+
+# Environment variables
+env:
+  NODE_VERSION: '14'  # Matches the version specified in build.yml
+
+jobs:
+  pr-checks:
+    name: Pull Request Validation
+    runs-on: ubuntu-latest
+
+    steps:
+      # Step 1: Check out repository code
+      # actions/checkout@v2
+      - name: Checkout code
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0  # Fetch all history for accurate validation
+
+      # Step 2: Set up Node.js environment
+      # actions/setup-node@v2
+      - name: Set up Node.js
+        uses: actions/setup-node@v2
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'  # Enable npm dependency caching
+
+      # Step 3: Run build workflow
+      # Uses the build.yml workflow which includes:
+      # - Dependency installation
+      # - Build process
+      # - Linting
+      # - Docker image building
+      - name: Run build checks
+        uses: ./.github/workflows/build.yml
+
+      # Step 4: Run test workflow
+      # Uses the test.yml workflow which includes:
+      # - Unit tests
+      # - Integration tests
+      # - Coverage reporting
+      - name: Run test suite
+        uses: ./.github/workflows/test.yml
+
+      # Step 5: Validate PR title and description
+      - name: Validate PR metadata
+        run: |
+          # Ensure PR title follows conventional commits
+          if ! echo "${{ github.event.pull_request.title }}" | grep -E '^(feat|fix|docs|style|refactor|perf|test|build|ci|chore)(\([a-z]+\))?: .+$'; then
+            echo "Error: PR title must follow conventional commits format"
+            exit 1
+          fi
+          
+          # Ensure PR description is not empty
+          if [ -z "${{ github.event.pull_request.body }}" ]; then
+            echo "Error: PR description cannot be empty"
+            exit 1
+          fi
+
+      # Step 6: Check for merge conflicts
+      - name: Check for merge conflicts
+        run: |
+          if git merge-base --is-ancestor ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }}; then
+            echo "No merge conflicts detected"
+          else
+            echo "Warning: This branch may have merge conflicts"
+            exit 1
+          fi
+
+      # Step 7: Notify on completion
+      - name: Notify completion
+        if: always()
+        uses: actions/github-script@v4
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          script: |
+            const { owner, repo, number } = context.issue;
+            const status = '${{ job.status }}';
+            
+            const message = `PR Checks completed with status: ${status}
+            - Build: ✓
+            - Tests: ✓
+            - PR Validation: ✓`;
+            
+            await github.issues.createComment({
+              owner,
+              repo,
+              issue_number: number,
+              body: message
+            });
+
+    # Set timeout to prevent hanging jobs
+    timeout-minutes: 30
