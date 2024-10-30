@@ -1,0 +1,112 @@
+# Docker Compose configuration for production environment
+# Version: 3.8 for advanced features and compatibility
+version: '3.8'
+
+services:
+  # Main application service
+  app:
+    build:
+      # Context is set to the backend directory containing the source code
+      # Implements: Containerized Deployment requirement from system_architecture/deployment_architecture
+      context: ./src/backend
+      dockerfile: Dockerfile
+    environment:
+      # Production environment configuration
+      NODE_ENV: production
+      APP_PORT: '3000'
+      # Database connection configuration
+      DB_HOST: database
+      DB_PORT: '5432'
+      DB_USER: user
+      DB_PASSWORD: password
+      DB_NAME: appdb
+    ports:
+      # Expose application port
+      - "3000:3000"
+    depends_on:
+      # Ensure database is available before starting the application
+      database:
+        condition: service_healthy
+    healthcheck:
+      # Regular health checks to ensure application availability
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:3000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    restart: unless-stopped
+    networks:
+      - app_network
+    deploy:
+      # Production deployment configuration based on infrastructure.orchestration specs
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '1'
+          memory: 2G
+      restart_policy:
+        condition: on-failure
+        delay: 5s
+        max_attempts: 3
+        window: 120s
+
+  # PostgreSQL database service
+  # Using postgres:13 as specified in external dependencies
+  database:
+    image: postgres:13
+    environment:
+      # Database configuration
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: appdb
+    ports:
+      # Expose PostgreSQL port
+      - "5432:5432"
+    volumes:
+      # Persistent volume for database data
+      - db_data:/var/lib/postgresql/data
+      # Volume for initialization scripts
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    healthcheck:
+      # Ensure database is ready to accept connections
+      test: ["CMD-SHELL", "pg_isready -U user -d appdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - app_network
+    deploy:
+      resources:
+        limits:
+          cpus: '1'
+          memory: 2G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+# Volume definitions for persistent data
+volumes:
+  db_data:
+    driver: local
+
+# Network configuration
+networks:
+  app_network:
+    driver: bridge
+    # Enable IPv6 support
+    enable_ipv6: true
+    # Configure network with better isolation
+    driver_opts:
+      com.docker.network.bridge.name: app_bridge
+      com.docker.network.driver.mtu: 1500
+    # Configure IPAM for better network management
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.28.0.0/16
+          gateway: 172.28.0.1
+        - subnet: "2001:db8::/64"
+          gateway: "2001:db8::1"
